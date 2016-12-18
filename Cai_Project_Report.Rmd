@@ -1,0 +1,347 @@
+---
+title: "State Unemployment Rates Analysis"
+author: "Shiqin Cai"
+date: "December 6, 2016"
+output:
+  html_document:
+    fig_caption: yes
+subtitle: MSDS 597 Final Project Report - Fall 2016
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=F, message=F, warning=F)
+library(tidyverse)
+library(stringr)
+```
+
+
+### Abstract
+
+State unemployment rate refers to the proportion of employable people in a state's workforce who are over the age of 16 and who have either lost their jobs or have been actively seeking for jobs without success. There are many factors affecting the unemployment rate of a state, such as economic development, educational attainment, demographics, minimum wage and so on. 
+
+In this project, two factors, educational attainment and race, are considered to be correlated with unemployment rates. And the purpose of this project is to find the correlation between state unemployment rates and educational attainment, and the correlation between state unemployment rates and race using data cleaning, manipulation, and data visualization techniques. At the end of this project, the results are compared with the trends of national unemployment rates by educational attainment and by race in the past ten years. In addition, an Shiny App is built to demonstrate this project.
+
+
+
+### Data Sources
+
+Three main data sets including state unemployment rates, state educational attainment and state demographics are used to analyze the correlation between unemployment rates and educational attainment, and the correlation between unemployment rates and race. 
+
+The first data set `state unemployment rates` is collected from National Conference of State Legislatures(NCSL) using web-scraping. The second data set `state educational attainment` is also collected by web-scraping from the Wikipedia page. The `df_state_demographics` data set is extracted directly from the `choropleth` package in R.
+
+At last, the national unemployment rates by educational attainment and by race data sets downloaded from Bureau of Labor Statistics(BLS) are used to compare with the correlations found.
+
+
+
+### State Unemployment Rates / State Educational Attainment / State Demographics
+
+#### State Unemployment Rates
+
+The following table shows the state unemployment rate in the U.S. in October 2016 (seasonally adjusted). Since there are two `State` columns and two `Rate` columns, but I want one column for each variable. 
+
+```{r}
+##### Webscraping
+library(rvest)
+url1 <- "http://www.ncsl.org/research/labor-and-employment/state-unemployment-update.aspx"
+url1.list <- url1 %>% read_html() %>% html_nodes("table") %>% html_table()
+unemployment <- url1.list[[1]]
+head(unemployment)
+```
+
+So I split the data frame into two and combine them by rows. In order to use choroplethr,
+I convert the state names to lowercase. The tidy data frame is shown as below.
+
+```{r}
+##### Tidy Data
+df1 <- unemployment[c(1,2)]
+df2 <- unemployment[c(3,4)]
+unemployment <- rbind(df1, df2)
+unemployment$State <- tolower(unemployment$State)
+# class(unemployment$Rate) ----numeric
+head(unemployment, n=10)
+write_csv(unemployment, "tidy_data/unemployment.csv")
+write_csv(unemployment, "myApp/data/unemployment.csv")
+```
+
+The top 5 states with the lowest unemployment rates are: 
+
+```{r}
+unemployment %>% arrange(Rate) %>% filter(min_rank(Rate)<=5)
+```
+
+The top 5 states with the highest unemployment rates are:
+
+```{r}
+unemployment %>% filter(min_rank(desc(Rate))<=5) %>% arrange(desc(Rate))
+```
+
+The following state choropleth map shows the state unemployment rates in October 2016. 
+
+```{r}
+##### State Choropleth map
+library(choroplethr)
+unemployment %>% 
+  dplyr::rename(region=State ,value=Rate) %>%
+  state_choropleth(title="October 2016 State Unemployment Rates in the U.S.",
+                   legend="Unemployment Rates(%)")
+```
+
+
+#### Educational Attainment
+
+The following table shows the percentage of educational attainment by states.  
+
+```{r}
+##### Web Scrapping
+url2 <- "https://en.wikipedia.org/wiki/List_of_U.S._states_by_educational_attainment"
+url2.list <- url2 %>% read_html() %>% html_nodes("table") %>% html_table()
+education <- url2.list[[2]]
+head(education)
+```
+
+Since values in the columns `% High school graduate`, `% Bachelor's degree` and `% Advanced degree` are characters, I remove the `%` signs in these columns and convert them into numerical values. Moreover, only columns that I am interested in are kept, and the resulting tidy data frame is shown below. Again, I would like to use the tidy data to plot a choropleth map, so I change all state names to lower cases.
+
+```{r}
+##### Tidy Data
+education <- education[c(1,2,4,6)]
+colnames(education)[2:4] <- c("High school graduate", "Bachelor's degree", "Advanced degree")
+# class(education$` % High school graduate`) ----character
+tidy <- function(x){ str_replace(x, "%","") %>% as.numeric() }
+education[2:4] <- apply(education[2:4], 2, tidy) # apply tidy function to columns
+education$State <- tolower(education$State)
+head(education, n=10)
+```
+
+The top 5 states with the highest high school graduate rates are:
+
+```{r}
+education %>% filter(min_rank(desc(`High school graduate`))<=5)
+```
+
+The top 5 states with the highest percentage of population who have a Bachelor's degree are:
+
+```{r}
+education %>% filter(min_rank(desc(`Bachelor's degree`))<=5)
+```
+
+The top 5 states with the highest percentage of population who have a advanced degree are:
+
+```{r}
+education %>% filter(min_rank(desc(`Advanced degree`))<=5)
+```
+
+The choropleths maps below display the percentage of each educational level in all states.
+
+```{r}
+##### State Choropleth maps
+library(gridExtra)
+h <- education %>% dplyr::rename(region=State, value=`High school graduate`) %>%
+    state_choropleth(title="High School Graduate(%)", legend="Percentage")
+b <- education %>% dplyr::rename(region=State, value=`Bachelor's degree`) %>%
+    state_choropleth(title="Bachelor's Degree(%)", legend="Percentage")
+a <- education %>% dplyr::rename(region=State, value=`Advanced degree`) %>%
+    state_choropleth(title="Advanced Degree(%)", legend="Percentage")
+grid.arrange(h, b, a, nrow=3, ncol=1)
+```
+
+Comparing the state unemployment rates with state educational attainment, we see that New Hampshire has high `high school graduate` rate and low unemployment rate. Massachusetts has a high percentage of population with at least a Bachelor's degree, and it has low unemployment rate. This shows that education matters. Education helps us to be more competitive in the job market. However, District of Columbia has a high percentage of population with at least a bachelor's degree but still has a high unemployment rate.
+
+
+```{r}
+education_tall <- education %>% 
+  gather(c(2:4), key="Level", value="Percentage") %>%
+  arrange(State)
+head(education_tall, n=10)
+write_csv(education_tall, "tidy_data/education_tall.csv")
+write_csv(education_tall, "myApp/data/education_tall.csv")
+```
+
+The data frame above shows a transformation of the educational attainment data set from "wide" to "long". This transformed data frame allows me to use the variable `Level` as an inputId for my shiny app which has radio button inputs with education level in the sidebar panel.
+
+
+#### State Demographics 
+
+The following shows the state demographics data frame in the `choropleth` package in R, which is tidy. Only rows that I'm interested in are selected.
+
+```{r}
+data("df_state_demographics")
+df_state_demographics <- df_state_demographics %>% select(1:6)
+head(df_state_demographics)
+```
+
+
+#### Joined Data Frame
+
+In order to find out the correlations among unemployment rates, educational attainment and race, I merge the three data sets into one. Since `inner_join` only matches pairs of observations with the same key value, I would like to look at which observations are not matched while joining the three tidy data frames above. 
+
+```{r}
+ue <- inner_join(unemployment, education)
+# negate function of %in%
+'%!in%' <- function(x,y)!('%in%'(x,y))
+filter(unemployment, unemployment$State %!in% ue$State)
+filter(education, education$State %!in% ue$State)
+# `d.c.` is the abbreviation of `district of columbia`
+unemployment$State[9] <- "district of columbia"
+```
+
+From the results above, I notice that `d.c.` is the abbreviation of `district of columbia` but these two observations are not matched while joining the data sets `unemployment` and `education`. Hence, I change `d.c.` to `district of columbia` in the `unemployment` data frame, and inner join the data sets again. The combination of the three data frames is shown below:
+
+```{r}
+ue <- inner_join(unemployment, education)
+ued <- inner_join(ue, df_state_demographics, by=c("State"="region"))
+head(ued)
+write_csv(ued, "tidy_data/uedjoin.csv")
+write_csv(ued, "myApp/data/uedjoin.csv")
+```
+
+
+#### Unemployment rate  vs  Education
+
+The state unemployment rates against state educational attainments are plotted below. From the plots, we can see that the percentage of high school graduate and unemployment rate are negatively correlated. States with low percentage of high school graduate have relatively high unemployment rates, while states with higher percentage of high school graduate are more likely to have lower unemployment rates. The percentage of population with a bachelor's degree is also negatively correlated with unemployment rate. However, the percentage of advanced degree has no clear correlation with unemployment rate.
+
+```{r}
+library(ggthemes)
+h <- ued %>% ggplot(aes(Rate, `High school graduate`)) + geom_point() + geom_smooth() + 
+  ggtitle("High school graduate") + xlab("Unemployment Rate") + theme_economist() 
+b <- ued %>% ggplot(aes(Rate, `Bachelor's degree`)) + geom_point() + geom_smooth() + 
+  ggtitle("Bachelor's degree") + xlab("Unemployment Rate") + theme_economist() 
+a <- ued %>% ggplot(aes(Rate, `Advanced degree`)) + geom_point() + geom_smooth() + 
+  ggtitle("Advanced degree") + xlab("Unemployment Rate") + theme_economist() 
+grid.arrange(h,b,a, ncol=3, nrow=1)  
+```
+
+
+#### Unemployment Rate  vs  Race
+
+The following displays the plots of state unemployment rate against race percentage. The percentage of Whites in a state has an obvious negative correlation with the state's unemployment rate. States with high percentage of Whites have low unemployment rates. Besides, there seems to be a negative correlation between the percentage of Asians in a state and state unemployment rates. In addition, both the percentage of Blacks and Hispanics are positively correlated with unemployment rate.
+
+```{r}
+w <- ued %>% ggplot(aes(Rate, percent_white)) + geom_point() + geom_smooth() + 
+  ggtitle("Percent White") + xlab("Unemployment Rate") + theme_excel() +
+  geom_text(aes(label=ifelse(percent_white>92, State, '')), hjust=0.5, vjust=1, 
+            colour="red")
+b <- ued %>% ggplot(aes(Rate, percent_black)) + geom_point() + geom_smooth() + 
+  ggtitle("Percent Black") + xlab("Unemployment Rate") + theme_excel() +
+  geom_text(aes(label=ifelse(percent_black>40, State, '')), hjust=0.5, vjust=1, 
+            colour="red")
+a <- ued %>% ggplot(aes(Rate, percent_asian)) + geom_point() + geom_smooth() + 
+  ggtitle("Percent Asian") + xlab("Unemployment Rate") + theme_excel() +
+  geom_text(aes(label=ifelse(percent_asian>30, State, '')), hjust=0.5, vjust=1, 
+            colour="red")
+h <- ued %>% ggplot(aes(Rate, percent_hispanic)) + geom_point() + geom_smooth() + 
+  ggtitle("Percent Hispanic") + xlab("Unemployment Rate") + theme_excel() +
+  geom_text(aes(label=ifelse(percent_hispanic>40, State, '')), hjust=0.5, vjust=1,
+            colour="red")
+grid.arrange(w, b, a, h, ncol=2, nrow=2)
+```
+
+
+
+### Unemployemnt Rates by Educational Attainment
+
+
+The data frame below is made up of four data sets downloaded from the Bureau of Labor Statistics. It shows the unemployment rates by educational attainment in the past ten years collected from Current Population Survey(CPS), or household survey. 
+
+```{r}
+##### collect data
+df1 <- read_csv("data/LessThanHS.csv", skip=12) %>% as.data.frame() %>%
+  gather(Jan:Dec, key="Month", value="Less_than_High_School") %>% arrange(Year)
+df2 <- read_csv("data/HSonly.csv", skip=12) %>% as.data.frame() %>% 
+  gather(Jan:Dec, key="Month", value="High_School") %>% arrange(Year)
+df3 <- read_csv("data/SomeCollege.csv", skip=12) %>% as.data.frame() %>% 
+  gather(Jan:Dec, key="Month", value="Some_College") %>% arrange(Year)
+df4 <- read_csv("data/BachelorHigher.csv", skip=12) %>% as.data.frame() %>% 
+  gather(Jan:Dec, key="Month", value="Bachelor_and_Higher") %>% arrange(Year)
+unemp_by_education <- df1 %>% inner_join(df2) %>% inner_join(df3) %>% inner_join(df4)
+head(unemp_by_education)
+write_csv(unemp_by_education, "tidy_data/unemp_by_education.csv")
+```
+
+In order to plot the unemployment rates against year and color by educational level, I first convert the data frame from "wide" to "long". Then columns `Year` and `Month` are combined to one column and then are converted to time format. The resulting data frame is shown below.
+
+```{r}
+##### tidy data
+library(zoo) # yearmon
+# wide to long, combine `Year` and `Month` to a new variable `Time`
+edu <- unemp_by_education %>% 
+  gather(c(3:6), key="Educational_Level", value="Unemployment_Rate") %>% 
+  unite(Time, Year, Month, sep=" ")
+# convert `Time` to date, so we can plot using `Time` as x-axis
+edu$Time <- as.Date(as.yearmon(edu$Time, "%Y %b"))
+# edu$Time <- as.yearmon(edu$Time, "%Y %b") #warning message: Don't know how to automatically pick scale for object of type yearmon.
+edu <- edu %>% arrange(Time) 
+head(edu)
+```
+
+From the ggplot below, we can see that in the past ten years, the unemployment rate of population whose educational level is lower than high school is highest. And the unemployment rate among those who have bachelor's degree or higher degree is lowest. This also shows that the educational level is negatively correlated with unemployment rate, which is consistent with the result I got by just looking at the state unemployment rates and state educational attainment.
+
+```{r}
+##### ggplot
+edu %>%  ggplot(aes(Time, Unemployment_Rate, colour=Educational_Level)) +
+  geom_point() + ggtitle("Unemployment Rates by Educational Level in the Past 10 years") 
+```
+
+
+### Unemployment Rates by Race
+
+The data frame below is also made up of four data sets downloaded from the Bureau of Labor Statistics. It shows the unemployment rates by race (White, Black, Asian and Hispanic) in the past ten years collected from Current Population Survey(CPS), or household survey. 
+
+```{r}
+##### collect data
+w <- read_csv("data/White.csv", skip=12) %>% as.data.frame() %>%
+  gather(Jan:Dec, key="Month", value="White") %>% arrange(Year)
+b <- read_csv("data/Black.csv", skip=12) %>% as.data.frame() %>%
+  gather(Jan:Dec, key="Month", value="Black") %>% arrange(Year)
+a <- read_csv("data/Asian.csv", skip=12) %>% as.data.frame() %>%
+  gather(Jan:Dec, key="Month", value="Asian") %>% arrange(Year)
+h <- read_csv("data/Hispanic.csv", skip=12) %>% as.data.frame() %>%
+  gather(Jan:Dec, key="Month", value="Hispanic") %>% arrange(Year)
+unemp_by_race <- w %>% inner_join(b) %>% inner_join(a) %>% inner_join(h)
+head(unemp_by_race)
+write_csv(unemp_by_race, "tidy_data/unemp_by_race.csv")
+```
+
+In order to plot the unemployment rates against year and color by race, I first convert the data frame from "wide" to "long". Then columns `Year` and `Month` are combined to one column and then are converted to time format. The resulting data frame is shown below.
+
+```{r}
+##### tidy data
+# wide to long, combine `Year` and `Month` to a new variable `Time`
+race <- unemp_by_race %>% 
+  gather(c(3:6), key="Race", value="Unemployment_Rate") %>% 
+  unite(Time, Year, Month, sep=" ")
+# convert `Time` to date, so we can plot using `Time` as x-axis
+race$Time <- as.Date(as.yearmon(race$Time, "%Y %b"))
+race <- race %>% arrange(Time) 
+head(race)
+```
+
+From the ggplot below, we can see that in the past ten years, the Black unemployment rate is the highest, Hispanic unemployment rate is the second highest, and White unemployment rate is lower than Black and Hispanic unemployment rate but is slightly higher than Asian unemployment rate. This also is consistent with the correlations I found.
+
+```{r}
+##### ggplot
+race %>%  ggplot(aes(Time, Unemployment_Rate, colour=Race)) +
+  geom_point() + ggtitle("Unemployment Rates by Race in the Past 10 years") 
+```
+
+
+
+### Shiny App
+
+https://caisq.shinyapps.io/myapp/
+
+This UI displays the following things:
+
+- state unemployment rates in a choropleth map in the bottom left panel, 
+- an interactive choropleth map with a tabset panel which shows state demographics in the main panel, 
+- an interactive map with radio buttons which allows users to select an educational level to view the state educational attainment, and 
+- a table generated from two states selected by users.
+
+The layout in this UI allows us to visually compare three maps to see the correlations among educational attainment, race and unemployment rate. The table also provides data for users to compare two states.
+
+In the future, I would like to make the map more interactive, so users can click on a state on the choropleth map to view the corresponding information such as educational attainment, demographics, and unemployment rate of the state. In addition, I will fit a statistical model to the unemployment rates against some factors and use the model to predict unemployment rate in the future. 
+
+
+
+
+
+
