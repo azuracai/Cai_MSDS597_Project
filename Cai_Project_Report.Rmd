@@ -94,8 +94,8 @@ The following table shows the percentage of educational attainment by states.
 ```{r}
 ##### Web Scrapping
 url2 <- "https://en.wikipedia.org/wiki/List_of_U.S._states_by_educational_attainment"
-url2.list <- url2 %>% read_html() %>% html_nodes("table") %>% html_table()
-education <- url2.list[[2]]
+url2.list <- url2 %>% read_html() %>% html_nodes("table") 
+education <- url2.list[[1]] %>% html_table(fill=T)
 head(education)
 ```
 
